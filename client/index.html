@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Arena of Heroes — MOBA Multijugador</title>
+  <meta name="description" content="MOBA multijugador en el navegador — 5 héroes únicos, batallas en tiempo real, chat y más">
+  <meta name="theme-color" content="#050a14">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════
+     UI OVERLAY
+     ════════════════════════════════════════════════════════ -->
+<div id="ui-overlay">
+
+  <!-- ── MENU ─────────────────────────────────────────────── -->
+  <div id="menu-screen" class="screen active">
+    <div class="menu-bg"></div>
+    <div class="menu-particles" id="menu-particles"></div>
+    <div class="menu-content">
+      <h1 class="game-title">
+        <span class="title-arena">ARENA</span>
+        <span class="title-of">OF</span>
+        <span class="title-heroes">HEROES</span>
+      </h1>
+      <p class="game-subtitle">MOBA Multijugador · 5 Héroes · Tiempo Real</p>
+      <div class="name-input-group">
+        <input type="text" id="player-name" placeholder="Tu nombre de invocador..." maxlength="20" autocomplete="off">
+      </div>
+      <div class="menu-buttons">
+        <button id="btn-create" class="btn btn-primary">
+          <span>⚔️</span> Crear Partida
+        </button>
+        <div class="join-group">
+          <input type="text" id="room-code" placeholder="Código de sala..." maxlength="6" autocomplete="off"
+                 style="text-transform:uppercase;letter-spacing:4px">
+          <button id="btn-join" class="btn btn-secondary">Unirse</button>
+        </div>
+      </div>
+      <div id="menu-error" class="error-msg"></div>
+      <p style="font-size:11px;color:#4a4a5a;margin-top:8px">
+        Juega en múltiples pestañas para probar multijugador · Phaser 3 + Socket.io
+      </p>
+    </div>
+  </div>
+
+  <!-- ── LOBBY ─────────────────────────────────────────────── -->
+  <div id="lobby-screen" class="screen">
+    <div class="lobby-content">
+      <h2>Sala de Espera</h2>
+      <div class="room-code-display">
+        Código de sala:&nbsp;
+        <span id="display-room-code">------</span>
+        <button class="btn-copy" id="btn-copy-code" title="Copiar código">📋</button>
+      </div>
+      <div class="teams-container">
+        <div class="team team-1">
+          <h3>🔴 Equipo Rojo</h3>
+          <div id="team1-players"></div>
+        </div>
+        <div class="vs-divider">VS</div>
+        <div class="team team-2">
+          <h3>🔵 Equipo Azul</h3>
+          <div id="team2-players"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:12px">
+        <button id="btn-select-hero" class="btn btn-primary">🦸 Seleccionar Héroe</button>
+        <button id="btn-add-bots" class="btn btn-secondary">🤖 Llenar con Bots</button>
+      </div>
+      <button id="btn-start" class="btn btn-primary" style="display:none; background:linear-gradient(135deg,#22aa55,#116633); margin-top:12px">⚡ ¡Iniciar Partida!</button>
+      <p id="lobby-status" class="lobby-status-text">Esperando jugadores...</p>
+    </div>
+  </div>
+
+  <!-- ── HERO SELECT ───────────────────────────────────────── -->
+  <div id="hero-select-screen" class="screen">
+    <div class="hero-select-content">
+      <h2>Elige tu Héroe</h2>
+      <div class="heroes-grid" id="heroes-grid"></div>
+      <div id="hero-info-panel" class="hero-info-panel">
+        <p style="color:var(--text-dim);text-align:center">Selecciona un héroe para ver sus estadísticas</p>
+      </div>
+      <div style="display:flex;gap:16px">
+        <button id="btn-back-lobby" class="btn btn-secondary">← Volver</button>
+        <button id="btn-confirm-hero" class="btn btn-primary" disabled>✅ Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GAME HUD ──────────────────────────────────────────── -->
+  <div id="game-hud" class="screen" style="pointer-events:none">
+
+    <!-- Top bar -->
+    <div class="hud-top">
+      <div class="nexus-hp">
+        <span class="nexus-icon">🔴</span>
+        <div class="hp-bar-container">
+          <div class="hp-bar" id="nexus1-bar" style="width:100%"></div>
+        </div>
+        <span id="nexus1-hp-text">1500/1500</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="game-timer" id="game-timer">00:00</div>
+        <button id="btn-music-toggle" class="btn-copy" title="Música On/Off" style="pointer-events:all;font-size:16px">🎵</button>
+      </div>
+      <div class="nexus-hp">
+        <span class="nexus-icon">🔵</span>
+        <div class="hp-bar-container">
+          <div class="hp-bar" id="nexus2-bar" style="width:100%;background:linear-gradient(90deg,#2255cc,#4488ff)"></div>
+        </div>
+        <span id="nexus2-hp-text">1500/1500</span>
+      </div>
+    </div>
+
+    <!-- Top Right Minimap -->
+    <div id="minimap-container" style="position:absolute;top:16px;right:16px;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:all;z-index:20">
+      <canvas id="minimap" width="150" height="150"></canvas>
+      <span style="font-size:10px;color:var(--text-dim);font-weight:600;letter-spacing:1px">MINIMAPA</span>
+    </div>
+
+    <!-- Kill feed -->
+    <div class="kill-feed" id="kill-feed"></div>
+
+    <!-- Respawn overlay -->
+    <div class="respawn-overlay" id="respawn-overlay" style="display:none">
+      <div class="respawn-content">
+        <h3>💀 Eliminado</h3>
+        <p>Reapareciendo en <span id="respawn-timer">6</span>s</p>
+      </div>
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="hud-bottom" style="pointer-events:all">
+
+      <!-- Player stats -->
+      <div class="player-hud">
+        <div class="hero-portrait" id="player-portrait">?</div>
+        <div class="stats">
+          <div class="stat-row">
+            <span class="stat-label">HP</span>
+            <div class="hp-bar-container">
+              <div class="hp-bar" id="player-hp-bar" style="width:100%"></div>
+            </div>
+            <span id="player-hp-text">---</span>
+          </div>
+        </div>
+        <!-- Abilities -->
+        <div class="abilities">
+          <div class="ability-slot" id="slot-q" title="Habilidad (Q)">
+            <span class="key-label">Q</span>
+            <span class="abil-name" id="q-name">-</span>
+            <div class="cooldown-fill" id="q-cd-fill" style="height:0%"></div>
+            <span class="cooldown-text" id="q-cd-text"></span>
+          </div>
+          <div class="ability-slot ultimate-slot" id="slot-r" title="Habilidad Definitiva (R)">
+            <span class="key-label" style="color:#ffdd44">R</span>
+            <span class="abil-name" id="r-name">Ult</span>
+            <div class="cooldown-fill" id="r-cd-fill" style="height:0%"></div>
+            <span class="cooldown-text" id="r-cd-text"></span>
+          </div>
+          <div class="ability-slot" title="Ataque básico (Click derecho)">
+            <span class="key-label">🗡️</span>
+            <span class="abil-name">Ataque</span>
+          </div>
+        </div>
+        <!-- KDA -->
+        <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-dim)">
+          <span>K: <b id="hud-kills" style="color:#66ff99">0</b></span>
+          <span>M: <b id="hud-deaths" style="color:#ff6666">0</b></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat (left side) -->
+    <div class="chat-container" id="chat-container" style="pointer-events:all">
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="Enter para chatear..." maxlength="100" autocomplete="off">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GAME OVER ─────────────────────────────────────────── -->
+  <div id="gameover-screen" class="screen">
+    <div class="gameover-content">
+      <div id="victory-text" class="victory-text">VICTORIA</div>
+      <div id="gameover-team" class="gameover-team"></div>
+      <div class="scoreboard" id="scoreboard"></div>
+      <button id="btn-play-again" class="btn btn-primary" style="margin-top:8px">🔄 Volver al Menú</button>
+    </div>
+  </div>
+
+</div><!-- end ui-overlay -->
+
+<!-- Scripts -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+<script src="js/game.js"></script>
+
+</body>
+</html>
