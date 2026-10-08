@@ -90,15 +90,37 @@ let audioCtx = null;
 
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
   return audioCtx;
 }
 
-function playSound(type) {
+// Activar audio automáticamente al primer clic del usuario en la pantalla
+window.addEventListener('pointerdown', () => {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === 'suspended') ctx.resume();
+}, { once: true });
+
+function playSound(type, x = null, y = null) {
   try {
     const ctx = getAudioCtx();
     const masterGain = ctx.createGain();
-    masterGain.gain.value = 0.2;
-    masterGain.connect(ctx.destination);
+    masterGain.gain.value = 0.25;
+
+    // Sonido 3D Espacial (Balance izquierda / derecha según la posición en pantalla)
+    let panner = null;
+    if (x !== null && y !== null && GS.phaserScene && ctx.createStereoPanner) {
+      const cam = GS.phaserScene.cameras.main;
+      const screenX = (x - cam.scrollX) * cam.zoom;
+      const pan = Phaser.Math.Clamp((screenX - (cam.width / 2)) / (cam.width / 2), -1, 1);
+      panner = ctx.createStereoPanner();
+      panner.pan.setValueAtTime(pan, ctx.currentTime);
+      masterGain.connect(panner);
+      panner.connect(ctx.destination);
+    } else {
+      masterGain.connect(ctx.destination);
+    }
 
     const configs = {
       attack:   [{ freq: 220, dur: 0.08, type: 'sawtooth', gain: 0.4 }],
@@ -114,7 +136,14 @@ function playSound(type) {
       defeat:   [{ freq: 220, dur: 0.5, type: 'sine', gain: 0.4 }, { freq: 185, dur: 0.7, type: 'sine', gain: 0.3 }],
       move:     [{ freq: 600, dur: 0.04, type: 'sine', gain: 0.05 }],
       nexusHit: [{ freq: 100, dur: 0.3, type: 'square', gain: 0.5 }],
-      ui:       [{ freq: 740, dur: 0.08, type: 'sine', gain: 0.15 }]
+      ui:       [{ freq: 740, dur: 0.08, type: 'sine', gain: 0.15 }],
+
+      // Habilidades Definitivas (R)
+      meteor:            [{ freq: 60, dur: 0.6, type: 'sawtooth', gain: 0.7 }, { freq: 120, dur: 0.4, type: 'square', gain: 0.5 }, { freq: 30, dur: 0.8, type: 'sine', gain: 0.8 }],
+      arrowBarrage:      [{ freq: 900, dur: 0.08, type: 'sawtooth', gain: 0.3 }, { freq: 1100, dur: 0.08, type: 'sine', gain: 0.3 }, { freq: 1300, dur: 0.1, type: 'triangle', gain: 0.3 }],
+      earthquake:        [{ freq: 40, dur: 0.8, type: 'sawtooth', gain: 0.8 }, { freq: 70, dur: 0.6, type: 'square', gain: 0.6 }],
+      shadowMark:        [{ freq: 700, dur: 0.2, type: 'sawtooth', gain: 0.5 }, { freq: 350, dur: 0.3, type: 'square', gain: 0.4 }],
+      celestialBlessing: [{ freq: 523, dur: 0.3, type: 'sine', gain: 0.3 }, { freq: 659, dur: 0.3, type: 'sine', gain: 0.3 }, { freq: 783, dur: 0.4, type: 'sine', gain: 0.4 }, { freq: 1046, dur: 0.5, type: 'triangle', gain: 0.3 }]
     };
 
     const layers = configs[type] || configs.hit;
@@ -135,13 +164,14 @@ function playSound(type) {
       gain.connect(masterGain);
       osc.start(now + delayOffset);
       osc.stop(now + delayOffset + cfg.dur + 0.05);
-      delayOffset += 0.05 * i;
+      delayOffset += 0.04 * i;
     });
   } catch(e) { /* ignore audio errors */ }
 }
 
 let musicPlaying = false;
 let musicInterval = null;
+let bgmAudio = null;
 
 function toggleMusic() {
   musicPlaying = !musicPlaying;
@@ -156,12 +186,38 @@ function toggleMusic() {
 }
 
 function startMusic() {
+  musicPlaying = true;
+  const btn = document.getElementById('btn-music-toggle');
+  if (btn) btn.textContent = '🔊';
+
+  if (!bgmAudio) {
+    bgmAudio = new Audio('/audio/bgm.mp3');
+    bgmAudio.loop = true;
+    bgmAudio.volume = 0.5;
+  }
+
+  bgmAudio.play().then(() => {
+    console.log('🎵 Música MP3 reproducida con éxito');
+  }).catch(e => {
+    console.log('Error o permiso necesario para MP3, iniciando sintetizador:', e);
+    startSynthMusic();
+  });
+}
+
+function stopMusic() {
+  musicPlaying = false;
+  if (bgmAudio) {
+    bgmAudio.pause();
+  }
+  stopSynthMusic();
+}
+
+function startSynthMusic() {
   if (musicInterval) clearInterval(musicInterval);
   const ctx = getAudioCtx();
 
-  // Escala D Menor Épica (D, F, G, A, C)
-  const bassNotes = [73.42, 73.42, 87.31, 98.00, 73.42, 73.42, 110.00, 98.00]; // D2, F2, G2, A2
-  const chordRoots = [146.83, 174.61, 196.00, 220.00]; // D3, F3, G3, A3
+  const bassNotes = [73.42, 73.42, 87.31, 98.00, 73.42, 73.42, 110.00, 98.00];
+  const chordRoots = [146.83, 174.61, 196.00, 220.00];
   let step = 0;
 
   musicInterval = setInterval(() => {
@@ -172,9 +228,7 @@ function startMusic() {
       masterGain.gain.setValueAtTime(0.08, now);
       masterGain.connect(ctx.destination);
 
-      // 1. TAMBOR / KICK & SNARE (Ritmo de Batalla)
       if (step % 2 === 0) {
-        // Kick drum
         const kickOsc = ctx.createOscillator();
         const kickGain = ctx.createGain();
         kickOsc.frequency.setValueAtTime(120, now);
@@ -186,56 +240,12 @@ function startMusic() {
         kickOsc.start(now);
         kickOsc.stop(now + 0.15);
       }
-      if (step % 4 === 2) {
-        // Snare drum
-        const snareOsc = ctx.createOscillator();
-        const snareGain = ctx.createGain();
-        snareOsc.type = 'triangle';
-        snareOsc.frequency.setValueAtTime(240, now);
-        snareGain.gain.setValueAtTime(0.25, now);
-        snareGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-        snareOsc.connect(snareGain);
-        snareGain.connect(masterGain);
-        snareOsc.start(now);
-        snareOsc.stop(now + 0.12);
-      }
-
-      // 2. BAJO ÉPICO (Sawtooth arpegiado)
-      const bassOsc = ctx.createOscillator();
-      const bassGain = ctx.createGain();
-      const bFreq = bassNotes[step % bassNotes.length];
-      bassOsc.type = 'sawtooth';
-      bassOsc.frequency.setValueAtTime(bFreq, now);
-      bassGain.gain.setValueAtTime(0.25, now);
-      bassGain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
-      bassOsc.connect(bassGain);
-      bassGain.connect(masterGain);
-      bassOsc.start(now);
-      bassOsc.stop(now + 0.2);
-
-      // 3. ACORDES HÉROES / BRASS (Cada 4 pasos)
-      if (step % 4 === 0) {
-        const root = chordRoots[(step / 4) % chordRoots.length];
-        [root, root * 1.2, root * 1.5].forEach((freq, idx) => {
-          const chordOsc = ctx.createOscillator();
-          const chordGain = ctx.createGain();
-          chordOsc.type = 'triangle';
-          chordOsc.frequency.setValueAtTime(freq, now);
-          chordGain.gain.setValueAtTime(0.12, now);
-          chordGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-          chordOsc.connect(chordGain);
-          chordGain.connect(masterGain);
-          chordOsc.start(now);
-          chordOsc.stop(now + 0.42);
-        });
-      }
-
       step++;
     } catch(e) {}
-  }, 180); // Tempo rápido de batalla (~166 BPM)
+  }, 180);
 }
 
-function stopMusic() {
+function stopSynthMusic() {
   if (musicInterval) {
     clearInterval(musicInterval);
     musicInterval = null;
@@ -291,7 +301,10 @@ function initSocket() {
     GS.gameStartTime = Date.now();
     showScreen('game-hud');
     addChatMsg('Sistema', 0, '⚔️ ¡La partida ha comenzado! Destruye el Nexus enemigo.', true);
-    if (!musicPlaying) toggleMusic();
+    musicPlaying = true;
+    const btn = document.getElementById('btn-music-toggle');
+    if (btn) btn.textContent = '🔊';
+    startMusic();
   });
 
   GS.socket.on('game_state', (state) => {
@@ -722,6 +735,9 @@ class GameScene extends Phaser.Scene {
     // Indicador de movimiento (anillo que aparece al hacer click)
     this.moveIndicator = this.add.graphics();
 
+    // Desactivar el menú contextual del navegador para usar clic derecho como ataque
+    this.input.mouse.disableContextMenu();
+
     // Input: movimiento y ataque
     this.input.on('pointerdown', this.onPointerDown, this);
 
@@ -891,42 +907,44 @@ class GameScene extends Phaser.Scene {
     const me = GS.currentState.players[GS.playerId];
     if (!me || !me.alive) return;
 
-    // Click derecho (o Ctrl+Click) = atacar
-    // Click izquierdo = mover / atacar si hay objetivo
     const wx = pointer.worldX;
     const wy = pointer.worldY;
-
-    // Verificar si se hizo click en un enemigo o nexus
-    let clickedTarget = null;
-
-    // Verificar nexus enemigo
     const myTeam = me.team;
-    const enemyNexus = myTeam === 1 ? 'nexus_t2' : 'nexus_t1';
-    const enemyNexusPos = myTeam === 1 ? NEXUS_POS.team2 : NEXUS_POS.team1;
-    const nexusDist = Math.hypot(wx - enemyNexusPos.x, wy - enemyNexusPos.y);
-    if (nexusDist < enemyNexusPos.radius + 10) {
-      clickedTarget = enemyNexus;
-    }
 
-    // Verificar jugadores enemigos
+    // Verificar si es Clic Derecho (Anticlic) o Clic Izquierdo sobre enemigo
+    const isRightClick = (pointer.button === 2 || pointer.rightButtonDown());
+
+    let clickedTarget = null;
+    let minDistance = 65; // Detección inteligente alrededor del punto clicado
+
+    // 1. Buscar jugador enemigo más cercano
+    Object.values(GS.currentState.players).forEach(p => {
+      if (p.id === GS.playerId || p.team === myTeam || !p.alive) return;
+      const dist = Math.hypot(wx - p.x, wy - p.y);
+      if (dist < minDistance) {
+        minDistance = dist;
+        clickedTarget = p.id;
+      }
+    });
+
+    // 2. Si no hay héroe enemigo en el rango, verificar Nexus enemigo
     if (!clickedTarget) {
-      Object.values(GS.currentState.players).forEach(p => {
-        if (p.id === GS.playerId || p.team === myTeam || !p.alive) return;
-        const dist = Math.hypot(wx - p.x, wy - p.y);
-        if (dist < this.HERO_RADIUS + 10) {
-          clickedTarget = p.id;
-        }
-      });
+      const enemyNexus = myTeam === 1 ? 'nexus_t2' : 'nexus_t1';
+      const enemyNexusPos = myTeam === 1 ? NEXUS_POS.team2 : NEXUS_POS.team1;
+      const nexusDist = Math.hypot(wx - enemyNexusPos.x, wy - enemyNexusPos.y);
+      if (nexusDist < enemyNexusPos.radius + 20) {
+        clickedTarget = enemyNexus;
+      }
     }
 
-    if (clickedTarget) {
-      // Atacar
-      playSound('attack');
-      GS.socket.emit('attack_cmd', { targetId: clickedTarget });
+    // Si es Clic Derecho (Anticlic) O si el clic izquierdo tocó a un enemigo directo:
+    if (isRightClick || clickedTarget) {
+      playSound('attack', wx, wy);
+      GS.socket.emit('attack_cmd', { targetId: clickedTarget || 'auto' });
       this.showAttackEffect(wx, wy);
     } else {
-      // Mover
-      playSound('move');
+      // Clic Izquierdo en terreno = Mover héroe
+      playSound('move', wx, wy);
       GS.socket.emit('move_cmd', { tx: wx, ty: wy });
       this.showMoveIndicator(wx, wy);
     }
@@ -943,10 +961,11 @@ class GameScene extends Phaser.Scene {
 
     const hero = HEROES[GS.heroType];
     if (hero) {
-      playSound(hero.ability.name.toLowerCase().includes('fuego') ? 'fireball' :
-               hero.ability.name.toLowerCase().includes('flecha') ? 'arrow' :
-               hero.ability.name.toLowerCase().includes('escudo') ? 'shield' :
-               hero.ability.name.toLowerCase().includes('salto') ? 'dash' : 'heal');
+      const sfxType = hero.ability.name.toLowerCase().includes('fuego') ? 'fireball' :
+                      hero.ability.name.toLowerCase().includes('flecha') ? 'arrow' :
+                      hero.ability.name.toLowerCase().includes('escudo') ? 'shield' :
+                      hero.ability.name.toLowerCase().includes('salto') ? 'dash' : 'heal';
+      playSound(sfxType, tx, ty);
     }
     GS.socket.emit('ability_cmd', { tx, ty });
   }
@@ -960,7 +979,15 @@ class GameScene extends Phaser.Scene {
     const tx = pointer.worldX;
     const ty = pointer.worldY;
 
-    playSound('explosion');
+    const ultSfx = {
+      ignis: 'meteor',
+      vex: 'arrowBarrage',
+      titan: 'earthquake',
+      shado: 'shadowMark',
+      lyra: 'celestialBlessing'
+    };
+    const sfx = ultSfx[GS.heroType] || 'explosion';
+    playSound(sfx, tx, ty);
     GS.socket.emit('ultimate_cmd', { tx, ty });
   }
 
@@ -990,13 +1017,18 @@ class GameScene extends Phaser.Scene {
 
   showAttackEffect(x, y) {
     const g = this.add.graphics();
-    g.lineStyle(2, 0xff4444, 1);
-    g.strokeCircle(x, y, 20);
+    g.lineStyle(2, 0xff2222, 1);
+    g.strokeCircle(x, y, 22);
+
+    // Mirilla de objetivo de ataque (+)
+    g.lineBetween(x - 12, y, x + 12, y);
+    g.lineBetween(x, y - 12, x, y + 12);
+
     this.tweens.add({
       targets: g,
       alpha: 0,
-      scaleX: 2, scaleY: 2,
-      duration: 400,
+      scaleX: 1.6, scaleY: 1.6,
+      duration: 450,
       onComplete: () => g.destroy()
     });
   }
